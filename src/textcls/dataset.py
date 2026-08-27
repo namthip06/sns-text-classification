@@ -22,7 +22,10 @@ WEAK_CAP = 0.4  # สัดส่วน weak label สูงสุดใน trai
 VAL_FRAC = 0.1
 SEED = 42
 
-# weak rule taxonomy → categories.json id (mapping ที่ยังต้อง human confirm)
+# weak rule taxonomy → categories.json id — human-editable ที่ configs/weak_label_map.json
+DEFAULT_LABEL_MAP = Path(__file__).resolve().parents[2] / "configs" / "weak_label_map.json"
+
+# fallback ถ้าไม่มีไฟล์ (ยังไม่มี human confirm)
 WEAK_LABEL_ALIASES = {
     "scam": "fraud",
     "e-cigarettes": "ecig",
@@ -32,6 +35,13 @@ WEAK_LABEL_ALIASES = {
     "alcohol_advertising": "alcohol",
     "copyright_infringement": "copyright",
 }
+
+
+def default_label_map() -> dict:
+    """mapping ปัจจุบัน — ถ้า configs/weak_label_map.json มี ให้ใช้ไฟล์นั้น (มนุษย์แก้ได้)."""
+    if DEFAULT_LABEL_MAP.exists():
+        return json.loads(DEFAULT_LABEL_MAP.read_text(encoding="utf-8"))
+    return WEAK_LABEL_ALIASES
 
 
 def _norm_label(label) -> str:
@@ -48,8 +58,11 @@ def merge_labels(frames: list[pd.DataFrame]) -> pd.DataFrame:
 
 
 def map_labels(df: pd.DataFrame, category_ids: list[str], label_map: dict | None = None) -> pd.DataFrame:
-    """map คอลัมน์ label ไป taxonomy 18 หมวด; label ที่ map ไม่ได้ → ตัดทิ้ง + warn."""
-    alias = {**WEAK_LABEL_ALIASES, **(label_map or {})}
+    """map คอลัมน์ label ไป taxonomy 18 หมวด; label ที่ map ไม่ได้ → ตัดทิ้ง + warn.
+
+    label_map ตัวไหนก็ override ไฟล์ config; ไม่ให้ → ใช้ default_label_map().
+    """
+    alias = {_norm_label(k): v for k, v in {**default_label_map(), **(label_map or {})}.items()}
     norm = df["label"].map(_norm_label)
     mapped = norm.map(lambda l: alias.get(l, l))
     valid = mapped.isin(category_ids)
