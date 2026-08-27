@@ -1,0 +1,24 @@
+# data / models (spec: อย่า commit ข้อมูลหรือ checkpoint)
+data/
+models/
+*.parquet
+*.pt
+*.safetensors
+
+# secrets
+.env
+.env.*
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+dist/
+build/
+
+# tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
