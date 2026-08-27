@@ -3,7 +3,10 @@ name = "textcls"
 version = "0.1.0"
 description = "Local Thai Twitter text classifier (18 categories) with weak-label gating"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "pandas>=3.0.5",
+    "pyarrow>=25.0.1",
+]
 
 [build-system]
 requires = ["uv_build>=0.12.5,<0.13.0"]
