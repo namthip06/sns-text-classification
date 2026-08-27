@@ -4,10 +4,16 @@ version = "0.1.0"
 description = "Local Thai Twitter text classifier (18 categories) with weak-label gating"
 requires-python = ">=3.12"
 dependencies = [
+    "accelerate>=1.14.0",
     "google-genai>=2.20.0",
     "pandas>=3.0.5",
+    "protobuf>=7.36.0",
     "pyarrow>=25.0.1",
     "scikit-learn>=1.9.0",
+    "sentencepiece>=0.2.2",
+    "tiktoken>=0.14.0",
+    "torch>=2.13.0",
+    "transformers>=5.16.1",
 ]
 
 [build-system]
