@@ -1,4 +1,4 @@
-"""Task 5 — dataset: merge labels + stratified split + class weight + weak cap."""
+"""Task 3 — dataset: weak-only → clean + map taxonomy + stratified split + save."""
 
 import json
 
@@ -15,30 +15,41 @@ def _d(rows):
     return pd.DataFrame(rows)
 
 
-# ── merge / priority ────────────────────────────────────────────────────
+# ── load_weak ───────────────────────────────────────────────────────────
 
-def test_merge_labels_priority_human_wins():
-    weak = _d({"content": ["x", "y"], "label": ["gambling", "kratom"], "source": ["weak", "weak"]})
-    llm = _d({"content": ["x", "z"], "label": ["gambling", "pornography"], "source": ["llm", "llm"]})
-    human = _d({"content": ["x"], "label": ["fraud"], "source": ["human"]})
-    merged = dataset.merge_labels([weak, llm, human])
-    by_content = merged.set_index("content")
-    assert by_content.loc["x", "source"] == "human"  # human ชนะ
-    assert len(merged) == 3  # x, y, z
+def test_load_weak_filters_non_auto_and_empty_label():
+    df = _d({"content": ["a", "b", "c", "d", "e"],
+             "flag": ["AUTO", "AUTO", "MANUAL", "AUTO", "AUTO"],
+             "category": ["Gambling", "", "Pornography", None, "Scam"]})
+    out = dataset.load_weak(df)
+    assert out["label"].tolist() == ["Gambling", "Scam"]  # MANUAL flag + label ว่าง ตัด
+    assert list(out.columns) == ["content", "label"]
+
+
+def test_load_weak_prefers_predicted_label_column():
+    df = _d({"content": ["a"], "flag": ["AUTO"],
+             "category": ["Gambling"], "predicted_label": ["Scam"]})
+    out = dataset.load_weak(df)
+    assert out["label"].tolist() == ["Scam"]
+
+
+def test_load_weak_missing_label_column_raises():
+    df = _d({"content": ["a"], "flag": ["AUTO"]})
+    with pytest.raises(ValueError):
+        dataset.load_weak(df)
 
 
 # ── label mapping (weak taxonomy → 18 หมวด) ─────────────────────────────
 
 def test_map_labels_aliases_and_drop_unmapped():
     df = _d({"content": ["a", "b", "c", "d"],
-             "label": ["scam", "kratom drink", "e-cigarettes", "not_a_category"],
-             "source": ["weak"] * 4})
+             "label": ["scam", "kratom drink", "e-cigarettes", "not_a_category"]})
     out = dataset.map_labels(df, CATEGORIES)
     assert out["label"].tolist() == ["fraud", "kratom", "ecig"]  # unmapped ถูกตัด
 
 
 def test_map_labels_identity_passthrough():
-    df = _d({"content": ["a"], "label": ["gambling"], "source": ["llm"]})
+    df = _d({"content": ["a"], "label": ["Gambling"]})
     out = dataset.map_labels(df, CATEGORIES)
     assert out["label"].tolist() == ["gambling"]
 
@@ -48,7 +59,7 @@ def test_map_labels_identity_passthrough():
 def test_train_val_split_stratified_keeps_all_classes():
     rows = []
     for cls in CATEGORIES:
-        rows += [{"content": f"{cls}-{i}", "label": cls, "source": "llm"} for i in range(20)]
+        rows += [{"content": f"{cls}-{i}", "label": cls} for i in range(20)]
     df = pd.DataFrame(rows)
     tr, va = dataset.train_val_split(df, val_frac=0.2, seed=42)
     assert set(va["label"]) == set(CATEGORIES)  # ไม่มีคลาสหายจาก val
@@ -56,69 +67,68 @@ def test_train_val_split_stratified_keeps_all_classes():
     assert len(va) == pytest.approx(0.2 * len(df), rel=0.15)
 
 
-# ── class weight / weak cap ─────────────────────────────────────────────
+# ── class weight ────────────────────────────────────────────────────────
 
 def test_class_weights_inverse_frequency():
     labels = pd.Series(["a"] * 4 + ["b"] * 2 + ["c"] * 2)
     w = dataset.class_weights(labels, ["a", "b", "c"])
-    # inverse frequency: a หายากสุด (4/8=0.5) → weight น้อยสุด; กลับกัน c เยอะสุด
-    assert w["b"] == w["c"]  # count เท่ากัน → weight เท่ากัน
+    # inverse frequency: a เยอะสุด (4/8=0.5) → weight น้อยสุด; b/c เท่ากัน
+    assert w["b"] == w["c"]
     assert w["a"] < w["b"]
     assert sum(w.values()) == pytest.approx(1.0)  # normalized
 
 
-def test_cap_weak_fraction_bounds():
-    rows = [{"content": f"w{i}", "label": "gambling", "source": "weak"} for i in range(7)]
-    rows += [{"content": f"l{i}", "label": "gambling", "source": "llm"} for i in range(3)]
-    train = pd.DataFrame(rows)
-    out = dataset.cap_weak_fraction(train, cap=0.4, seed=42)
-    weak_frac = (out["source"] == "weak").mean()
-    assert weak_frac <= 0.4
-    assert (out["source"] == "weak").sum() == 2  # 3 non-weak → weak ≤ 2
-
-
-def test_cap_weak_fraction_noop_when_under_cap():
-    rows = [{"content": f"l{i}", "label": "gambling", "source": "llm"} for i in range(8)]
-    rows += [{"content": f"w{i}", "label": "gambling", "source": "weak"} for i in range(2)]
-    train = pd.DataFrame(rows)
-    assert len(dataset.cap_weak_fraction(train, cap=0.4)) == 10
+def test_class_weights_empty_class_zero():
+    labels = pd.Series(["a"] * 4 + ["b"] * 2)
+    w = dataset.class_weights(labels, ["a", "b", "c"])
+    assert w["c"] == 0.0  # คลาสไม่มีข้อมูล → 0
 
 
 # ── CLI end-to-end ──────────────────────────────────────────────────────
 
 def test_main_writes_splits_and_weights(tmp_path):
-    weak = tmp_path / "weak_gated.csv"
-    _d({"content": ["w1", "w2", "w3"], "predicted_label": ["scam", "gambling", "kratom drink"],
-        "source": ["weak"] * 3}).to_csv(weak, index=False, encoding="utf-8-sig")
-
-    llm_dir = tmp_path / "llm"
-    llm_dir.mkdir()
-    with open(llm_dir / "b1.jsonl", "w", encoding="utf-8") as f:
-        for content, cat in [("l1", "gambling"), ("l2", "gambling"), ("l3", "pornography"),
-                             ("l4", "fraud"), ("l5", "kratom"), ("l6", "ecig"),
-                             ("l7", "prostitution"), ("l8", "gambling"), ("l9", "fraud"), ("l10", "ecig")]:
-            f.write(json.dumps({"content": content, "category": cat, "confidence": 0.9}) + "\n")
-
-    human = tmp_path / "human_labels.csv"
-    _d({"content": ["h1", "h2"], "label": ["gambling", "fraud"]}).to_csv(human, index=False, encoding="utf-8-sig")
+    weak = tmp_path / "weak.csv"
+    cats_rows = [{"content": f"{c}-{i}", "flag": "AUTO", "category": c} for c in
+                 ["Gambling", "Scam", "Kratom Drink", "E-Cigarettes", "Pornography", "Prostitution"]
+                 for i in range(10)]
+    _d(cats_rows).to_csv(weak, index=False, encoding="utf-8-sig")
 
     cats = tmp_path / "categories.json"
     cats.write_text(json.dumps([{"id": c, "name": c} for c in CATEGORIES], ensure_ascii=False))
 
     out = tmp_path / "out"
-    dataset.main(["--weak", str(weak), "--llm", str(llm_dir), "--human-test", str(human),
-                  "--categories", str(cats),
-                  "--out", str(out), "--cap-weak", "0.4"])
+    dataset.main(["--weak", str(weak), "--categories", str(cats), "--out", str(out)])
 
-    test = pd.read_csv(out / "test.csv")
-    assert set(test["source"]) == {"human"}  # test = ชุดมนุษย์เท่านั้น
+    for name in ["merged.csv", "train.csv", "val.csv"]:
+        assert (out / name).exists()
+    assert not (out / "test.csv").exists()
 
     train = pd.read_csv(out / "train.csv")
-    assert list(train.columns) == ["content", "label", "source"]
-    assert (train["source"] == "weak").mean() <= 0.4
-
+    assert list(train.columns) == ["content", "label"]  # ไม่มี source
     val = pd.read_csv(out / "val.csv")
-    assert set(train["label"]) | set(val["label"]) | set(test["label"]) >= set(CATEGORIES)
+    assert set(train["label"]) | set(val["label"]) == set(CATEGORIES)
+
+    merged = pd.read_csv(out / "merged.csv")
+    assert len(merged) == 60  # ทุกแถว map ได้ → merged ครบก่อน split
 
     w = json.loads((out / "class_weights.json").read_text())
     assert set(w) >= set(CATEGORIES)
+
+
+def test_main_drops_unmapped_and_cleans_text(tmp_path):
+    weak = tmp_path / "weak.csv"
+    _d({"content": ["ดู https://x.com @user #สล็อต 555555", "zzz"],
+        "flag": ["AUTO", "AUTO"],
+        "category": ["Gambling", "NoSuchCategory"]}).to_csv(weak, index=False, encoding="utf-8-sig")
+
+    cats = tmp_path / "categories.json"
+    cats.write_text(json.dumps([{"id": c, "name": c} for c in CATEGORIES], ensure_ascii=False))
+
+    out = tmp_path / "out"
+    dataset.main(["--weak", str(weak), "--categories", str(cats), "--out", str(out)])
+
+    merged = pd.read_csv(out / "merged.csv")
+    assert len(merged) == 1  # NoSuchCategory ถูกตัด
+    text = merged["content"].iloc[0]
+    assert "https" not in text and "@" not in text and "#" not in text
+    assert "555" not in text and "[LAUGH]" in text  # 555 → [LAUGH]
