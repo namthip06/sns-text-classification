@@ -117,9 +117,10 @@ def test_main_writes_splits_and_weights(tmp_path):
 
 def test_main_drops_unmapped_and_cleans_text(tmp_path):
     weak = tmp_path / "weak.csv"
-    _d({"content": ["ดู https://x.com @user #สล็อต 555555", "zzz"],
-        "flag": ["AUTO", "AUTO"],
-        "category": ["Gambling", "NoSuchCategory"]}).to_csv(weak, index=False, encoding="utf-8-sig")
+    # แถวที่ 3 = เนื้อหาเป็น URL ล้วน → clean กลายเป็น "" → ต้องถูกตัด (กัน NaN ตอนอ่านกลับ)
+    _d({"content": ["ดู https://x.com @user #สล็อต 555555", "zzz", "https://only-url.com"],
+        "flag": ["AUTO", "AUTO", "AUTO"],
+        "category": ["Gambling", "NoSuchCategory", "Gambling"]}).to_csv(weak, index=False, encoding="utf-8-sig")
 
     cats = tmp_path / "categories.json"
     cats.write_text(json.dumps([{"id": c, "name": c} for c in CATEGORIES], ensure_ascii=False))
@@ -128,7 +129,7 @@ def test_main_drops_unmapped_and_cleans_text(tmp_path):
     dataset.main(["--weak", str(weak), "--categories", str(cats), "--out", str(out)])
 
     merged = pd.read_csv(out / "merged.csv")
-    assert len(merged) == 1  # NoSuchCategory ถูกตัด
+    assert len(merged) == 1  # NoSuchCategory + content ว่าง ถูกตัด
     text = merged["content"].iloc[0]
     assert "https" not in text and "@" not in text and "#" not in text
     assert "555" not in text and "[LAUGH]" in text  # 555 → [LAUGH]

@@ -111,6 +111,7 @@ def main(argv: list[str] | None = None) -> None:
 
     df = load_weak(pd.read_csv(args.weak, encoding="utf-8-sig"))
     df["content"] = df["content"].astype(str).map(clean_text)
+    df = df[df["content"].str.strip() != ""].reset_index(drop=True)  # content ว่าง (ล้างแล้ว) → ตัด
     merged = map_labels(df, ids)
     train, val = train_val_split(merged, args.val_frac, args.seed)
 
