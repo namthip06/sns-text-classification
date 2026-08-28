@@ -8,8 +8,8 @@
 [input]                    [pipeline สร้าง]                          [input/eval]
 raw_posts.csv ──T2──▶ preprocessed.parquet ──T3──▶ llm_labels/*.jsonl ──┐
                                                                     ├─T5─▶ train/val/test.csv ──T6▶ เทรน
-weak_labels.csv ──────────────T4──▶ weak_gated.csv ─────────────────┘     └─▶ eval บน human_labels
-categories.json (ให้ prompt ใช้) · human_labels.csv (test set)
+weak_labels.csv ──────────────T4──▶ weak_gated.csv ─────────────────┘     └─▶ eval บน test (LLM hold-out)
+categories.json (ให้ prompt ใช้) · test = LLM label ที่ hold-out (ไม่มีมนุษย์ label)
 ```
 
 ## ตารางไฟล์ทั้งหมด
@@ -19,7 +19,7 @@ categories.json (ให้ prompt ใช้) · human_labels.csv (test set)
 | 1 | `data/raw_posts.csv` | ข้อมูลจริง | CSV | `content` | ✅ มี (`data/alltime_25_26_content_dedup.csv`) |
 | 2 | `data/weak_labels.csv` | tag rule (ระบบนอก) | CSV | `content, predicted_label` | ✅ มี (`data/weak_labels_auto.csv`) |
 | 3 | `data/categories.json` | **มนุษย์ supply** | JSON | 18 หมวด + ชื่อไทย + description |  ✅ มี (`data/categories.json`) |
-| 4 | `data/human_labels.csv` | **มนุษย์ label ~1-2k** | CSV | `content, label` | ❌ ยังไม่มี (เกต eval) |
+| 4 | ~~`data/human_labels.csv`~~ | ~~มนุษย์ label ~1-2k~~ | CSV | `content, label` | ⛔ ตัดสินใจแล้ว: ไม่มี → test = LLM hold-out |
 | 5 | `data/preprocessed.parquet` | Task 2 | parquet | `content_clean` | 🔜 สร้าง |
 | 6 | `data/llm_labels/*.jsonl` | Task 3 | JSONL | `content, category, confidence` | 🔜 สร้าง |
 | 7 | `data/llm_labels/agreement.json` | Task 3 (G2) | JSON | `{agreement_rate, ...}` | 🔜 สร้าง |
@@ -40,7 +40,7 @@ categories.json (ให้ prompt ใช้) · human_labels.csv (test set)
 ### ❌ ยังไม่มี — ต้องได้จากมนุษย์/ระบบนอก ก่อน dev ถึงขั้นนั้น
 - **`data/categories.json`** — 18 หมวด ยังไม่นิยามที่ไหน ต้อง supply ก่อน Task 3 (llm_label ใช้ใน prompt)
 - **`data/weak_labels.csv`** — ผลจาก tag rule (ระบบนอกเครื่อง) ต้อง supply ก่อน Task 4; ต้องยืนยันคอลัมน์จริงจากระบบนั้น
-- **`data/human_labels.csv`** — ชุดมนุษย์ label ~1-2k สำหรับ test (เกต evaluate ทั้งหมด ตาม spec ห้ามข้าม) ต้อง supply ก่อน Task 7
+- **~~`data/human_labels.csv`~~** — ~~ชุดมนุษย์ label ~1-2k สำหรับ test~~ ⛔ ไม่ต้อง supply แล้ว: test = LLM label ที่ hold-out (decision 2026-08-27)
 
 ## Schema ที่เสนอ (ยังต้อง confirm)
 
@@ -62,10 +62,9 @@ content, predicted_label
 "แชมป์โลกแน่แล้วทีมนี้", sport
 ```
 
-### 4. `data/human_labels.csv` (มนุษย์ label)
+### 4. ~~`data/human_labels.csv`~~ — ยกเลิก (ไม่มีมนุษย์ label)
 ```
-content, label
-"วันนี้กองเชียร์คึกคักสุดๆ", sport
+test.csv แทน = LLM label ที่ hold-out (stratified, source=llm) — ไม่ผสม weak
 ```
 
 ## Pipeline ผลิต (ไม่ต้อง supply) — ตัวอย่าง
@@ -88,4 +87,4 @@ content, label
 ## TODO / Open Questions
 - [ ] 18 หมวดจริงของ `categories.json` มาจากไหน?
 - [ ] `weak_labels.csv` จากระบบ tag rule มีคอลัมน์จริงชื่ออะไร?
-- [ ] ชุดมนุษย์ label ใครเป็นคน label?
+- [x] ~~ชุดมนุษย์ label ใครเป็นคน label?~~ → ตัดสินใจแล้ว: ไม่มี → test = LLM hold-out
