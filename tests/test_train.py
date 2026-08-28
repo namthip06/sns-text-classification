@@ -27,10 +27,10 @@ def test_loss_weights_aligned_to_label2id():
 
 
 def test_training_kwargs_defaults():
-    args = types.SimpleNamespace(out="models", tag="with_weak", lr=2e-5, epochs=3,
+    args = types.SimpleNamespace(out="models", tag="model", lr=2e-5, epochs=3,
                                  batch_size=16, seed=42, logging_steps=50)
     kw = train.training_kwargs(args)
-    assert kw["output_dir"] == "models/with_weak"
+    assert kw["output_dir"] == "models/model"
     assert kw["learning_rate"] == 2e-5
     assert kw["num_train_epochs"] == 3
     assert kw["seed"] == 42
@@ -54,13 +54,3 @@ def test_text_dataset_maps_labels(tmp_path):
     item = ds[0]
     assert item["input_ids"] == [1, 2, 3]
     assert item["labels"].item() == 0  # gambling → id 0
-
-
-def test_no_weak_filter_removes_weak_rows():
-    import pandas as pd
-
-    df = pd.DataFrame({"content": ["a", "b", "c"],
-                       "label": ["gambling"] * 3,
-                       "source": ["weak", "llm", "llm"]})
-    filtered = train.filter_no_weak(df)
-    assert filtered["source"].tolist() == ["llm", "llm"]

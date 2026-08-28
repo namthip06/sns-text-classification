@@ -1,8 +1,8 @@
-"""Task 6 — fine-tune BERT-style classifier (WangchanBERTa/PhayaThaiBERT) + A/B (G3).
+"""Task 4 — fine-tune BERT-style classifier (WangchanBERTa/PhayaThaiBERT).
 
-A/B: `--with-weak` (train มี weak ผ่าน G1) vs `--no-weak` (LLM อย่างเดียว)
-→ checkpoint ลง models/with_weak/ และ models/no_weak/.
-val ใช้ data/val.csv (ไม่ใช่ชุดมนุษย์ test) · reproducible (seed + config บันทึก).
+เทรนจาก weak ทั้งหมดตรงๆ (ข้อมูลทุก row เป็น weak) → checkpoint ลง models/<tag>/
+(default models/model/). A/B ที่เหลือ = เทียบโมเดล base ผ่าน `--model`.
+val ใช้ data/val.csv (hold-out จาก weak) · reproducible (seed + config บันทึก).
 """
 
 import argparse
@@ -29,11 +29,6 @@ def label2id(categories: list[dict]) -> dict:
 def loss_weights(weights: dict, lid: dict) -> torch.Tensor:
     """class weights (จาก dataset.class_weights) → tensor เรียงตาม label2id."""
     return torch.tensor([weights[c] for c in lid], dtype=torch.float)
-
-
-def filter_no_weak(df: pd.DataFrame) -> pd.DataFrame:
-    """--no-weak: ตัด weak rows ออกจาก train (ใช้ LLM อย่างเดียว)."""
-    return df[df["source"] != "weak"].reset_index(drop=True)
 
 
 class TextDataset(Dataset):
@@ -82,15 +77,13 @@ def training_kwargs(args) -> dict:
 def main(argv: list[str] | None = None) -> None:
     from textcls.dataset import class_weights
 
-    p = argparse.ArgumentParser(description="fine-tune classifier (A/B: --with-weak / --no-weak)")
-    p.add_argument("--train", required=True, help="train.csv (content, label, source)")
+    p = argparse.ArgumentParser(description="fine-tune classifier จาก weak ทั้งหมด")
+    p.add_argument("--train", required=True, help="train.csv (content, label)")
     p.add_argument("--val", required=True, help="val.csv")
     p.add_argument("--categories", required=True, help="categories.json (18 หมวด)")
     p.add_argument("--model", default=DEFAULT_MODEL, help="HF model id (default WangchanBERTa)")
     p.add_argument("--out", default="models", help="output root dir (models/)")
-    group = p.add_mutually_exclusive_group()
-    group.add_argument("--with-weak", action="store_true", help="train มี weak ที่ผ่าน G1 (default)")
-    group.add_argument("--no-weak", action="store_true", help="LLM อย่างเดียว (baseline A/B)")
+    p.add_argument("--tag", default="model", help="ชื่อโฟลเดอร์ checkpoint (default model)")
     p.add_argument("--epochs", type=int, default=3)
     p.add_argument("--lr", type=float, default=2e-5)
     p.add_argument("--batch-size", type=int, default=16)
@@ -98,14 +91,11 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--logging-steps", type=int, default=50)
     args = p.parse_args(argv)
 
-    args.tag = "no_weak" if args.no_weak else "with_weak"
     categories = json.loads(Path(args.categories).read_text(encoding="utf-8"))
     ids = [c["id"] for c in categories]
     lid = label2id(categories)
 
     train_df = pd.read_csv(args.train, encoding="utf-8-sig")
-    if args.no_weak:
-        train_df = filter_no_weak(train_df)
     val_df = pd.read_csv(args.val, encoding="utf-8-sig")
 
     class_w_t = loss_weights(class_weights(train_df["label"], ids), lid)
