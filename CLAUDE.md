@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-คำแนะนำสำหรับทำงานในโปรเจกต์นี้ เริ่มจาก **[SESSION.md](./SESSION.md)** (สถานะปัจจุบัน) · รายละเอียดเต็มที่ **[README.md](./README.md)** + **[docs/specs/text-classification-pipeline.md](./docs/specs/text-classification-pipeline.md)**
+คำแนะนำสำหรับทำงานในโปรเจกต์นี้ เริ่มจาก **[CLAUDE.md นี้](#โปรเจกต์)** (สถานะปัจจุบัน) · รายละเอียดเต็มที่ **[README.md](./README.md)** + **[docs/specs/text-classification-pipeline.md](./docs/specs/text-classification-pipeline.md)** + **[docs/plans/implementation-plan.md](./docs/plans/implementation-plan.md)**
 
 ## โปรเจกต์
 
@@ -21,7 +21,6 @@ raw_posts ─T2 preprocess: เก็บไว้ก่อน (ไว้คร�
 ```
 
 - `data/raw_posts.csv` (258k แถวดิบ) **ยังไม่ใช้** — เปิดขั้นตอน preprocess/LLM อีกครั้งเมื่อต้องการ ground truth (ถามก่อน)
-- โค้ดที่ตายแล้วรอการถอด: `llm_label.py` + test, `weak_label.py` + test, flag `--no-weak`, `--human-test` ของ dataset
 
 ## Commands
 
@@ -32,24 +31,24 @@ uv run python -m textcls.dataset --weak data/weak_labels.csv --categories data/c
 uv run python -m textcls.train --train data/train.csv --val data/val.csv --categories data/categories.json --out models/
 uv run python -m textcls.evaluate --model models/model/ --test data/val.csv
 uv run python -m textcls.calibrate --model models/model/ --val data/val.csv
+uv run python -m textcls.predict --model models/model/ --input in.csv --output out.csv
 ```
-
-(CLI เป้าหมายของ dataset/commands ใหม่ — โค้ด dataset.py ยังต้อง rework: ลบ `--llm`/`--human-test`/G1 mapping)
 
 ## โครงสร้าง
 
-- `src/textcls/` — source (src-layout) · ไฟล์ละหนึ่งสเตจ: `config.py` `preprocess.py` `dataset.py` `train.py` (+ `evaluate.py` `calibrate.py` `serve.py` `predict.py` ยังไม่สร้าง = Task 5-6)
+- `src/textcls/` — source (src-layout) · ไฟล์ละหนึ่งสเตจ: `config.py` `preprocess.py` `dataset.py` `train.py` `infer.py` (shared: โหลดโมเดล + predict logits) `calibrate.py` `evaluate.py` `predict.py` (`serve.py` ยังไม่สร้าง — เลื่อน)
 - `config.py` — **ทุก** path/threshold รวมที่เดียว (`CONFIDENCE_THRESHOLD=0.6`)
 - `configs/weak_label_map.json` — mapping weak→18 หมวด (มนุษย์แก้ได้; default ยังรอ confirm)
 - `data/` `models/` — **gitignored** (ข้อมูลจริง + checkpoints) ห้าม commit
 - `docs/` — `specs/` spec · `plans/implementation-plan.md` แผน · `notes/data-contract.md` โครงสร้างคอลัมน์ทุกไฟล์ · `ideas/` `interviews/` แนวคิดต้นทาง
 
-## สถานะสำคัญ (ณ 2026-08-27)
+## สถานะสำคัญ (ณ 2026-08-28)
 
-- Pipeline ใหม่ (decision ลบ LLM/human) เพิ่งเขียนลง plan/spec/CLAUDE นี้ — **โค้ดยังตามไม่ทัน**: `dataset.py` ยังรับ `--human-test` (required), `train.py` ยังมี `--no-weak`, `llm_label.py`/`weak_label.py` ยังอยู่ (จะถอด)
-- Tasks ตามแผนใหม่: 1 (scaffold) ✅ · 2 (preprocess) deferred · 3 (dataset rework) ⏳ · 4 (train) ✅ smoke · 5 (eval+calibrate) ⏳ · 6 (serve+predict) ⏳
-- Smoke train 100 ประโยคจาก weak บน GPU ผ่านแล้ว (`models/smoke/`) · 50 tests ผ่าน
-- mapping weak→18 หมวดยังไม่ confirm
+- Tasks: 1 ✅ · 2 (preprocess) deferred · 3 (dataset) ✅ · 4 (train) ✅ · 5 (eval+calibrate) ✅ · 6 (predict CLI) ✅ · `serve.py` (API) เลื่อน
+- dead code ถอดแล้ว: `llm_label.py`/`weak_label.py` + tests, `--no-weak`/`--human-test`, dep `google-genai` — **เก็บ `tiktoken`/`protobuf` ไว้** (transformers ต้องใช้สกัด tokenizer WangchanBERTa)
+- Smoke ครบ chain บน GPU: train 736 แถว (`models/model/`) → calibrate (T=0.22) → evaluate (macro-F1 0.48) → predict — **ยังไม่เทรนเต็ม 128k**
+- mapping weak→18: weak 16 ครบทั้งหมด; `religion`/`child_sexual_content` ไม่มี weak source → ไม่มี train data (class weight = 0)
+- 34 tests ผ่าน
 
 ## ข้อห้าม / ถามก่อน
 

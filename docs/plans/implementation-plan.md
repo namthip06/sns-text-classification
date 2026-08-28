@@ -62,16 +62,16 @@ weak_labels.csv → clean text → map taxonomy (weak 16 → 18 หมวด) �
 **Description:** อ่าน `data/weak_labels.csv` → กรองแถวที่มี label (`flag==AUTO`, `category` ไม่ว่าง) → clean text (reuse `clean_text`) → map taxonomy weak (16 คลาส) → 18 หมวดของ `categories.json` ผ่าน `configs/weak_label_map.json` → **stratified split → train/val** → คำนวณ class weight → **save ทั้ง merged (ก่อน split) + train.csv + val.csv**
 
 **Acceptance criteria:**
-- [ ] กรอง weak แถวที่ไม่มี label / `flag != AUTO` ออก
-- [ ] text ถูก clean (URL/@/#/555/ตัวซ้ำ) ก่อนเข้าเทรน
-- [ ] map taxonomy weak→18 หมวด (label ที่ map ไม่ได้ → ตัด + warn) ตาม `configs/weak_label_map.json`
-- [ ] Stratified split ไม่ให้คลาสหายจาก val
-- [ ] **save as: merged + train.csv + val.csv** (รวมถึง `class_weights.json`)
-- [ ] Class weight คำนวณถูก (inverse frequency)
+- [x] กรอง weak แถวที่ไม่มี label / `flag != AUTO` ออก (+ content ว่างหลัง clean ถูกตัด — กัน NaN round-trip)
+- [x] text ถูก clean (URL/@/#/555/ตัวซ้ำ) ก่อนเข้าเทรน
+- [x] map taxonomy weak→18 หมวด (label ที่ map ไม่ได้ → ตัด + warn) ตาม `configs/weak_label_map.json`
+- [x] Stratified split ไม่ให้คลาสหายจาก val
+- [x] **save as: merged + train.csv + val.csv** (รวมถึง `class_weights.json`)
+- [x] Class weight คำนวณถูก (inverse frequency)
 
 **Verification:**
-- [ ] `uv run pytest tests/test_dataset.py` ผ่าน (ปรับ test: ไม่มี `--human-test`/`--llm`)
-- [ ] `data/{merged,train,val}.csv` + `class_weights.json` ถูกเขียน
+- [x] `uv run pytest tests/test_dataset.py` ผ่าน (ปรับ test: ไม่มี `--human-test`/`--llm`)
+- [x] `data/{merged,train,val}.csv` + `class_weights.json` ถูกเขียน (merged=127,788 · train=115,009 · val=12,779)
 
 **Dependencies:** Task 1 · **Files likely touched:** `textcls/dataset.py`, `tests/test_dataset.py` · **Scope:** Medium
 
@@ -79,10 +79,10 @@ weak_labels.csv → clean text → map taxonomy (weak 16 → 18 หมวด) �
 **Description:** fine-tune `airesearch/wangchanberta-base-att-spm-uncased` (default) / PhayaThaiBERT (`--model`) ด้วย CE + class weight → checkpoint `models/`. **ไม่มี A/B weak vs no-weak แล้ว** (ทุกอย่างเป็น weak); A/B ที่เหลือ = เทียบโมเดล base ผ่าน `--model`
 
 **Acceptance criteria:**
-- [ ] เทรนบน GPU สำเร็จ, checkpoint ถูกบันทึก
-- [ ] validation ใช้ `data/val.csv` (hold-out จาก weak)
-- [ ] reproducible (seed + config บันทึก)
-- [ ] ลบ flag `--no-weak` (ไม่มีความหมายแล้ว)
+- [x] เทรนบน GPU สำเร็จ, checkpoint ถูกบันทึก (smoke 736/256 แถว → `models/model/`)
+- [x] validation ใช้ `data/val.csv` (hold-out จาก weak)
+- [x] reproducible (seed + config บันทึก)
+- [x] ลบ flag `--no-weak` (ไม่มีความหมายแล้ว) — `--tag` default `model`
 
 **Verification:** เทรนจบได้ + `models/` มี checkpoint + val loss/accuracy ใน log
 **Dependencies:** Task 3 · **Files likely touched:** `textcls/train.py` · **Scope:** Medium
@@ -93,22 +93,22 @@ weak_labels.csv → clean text → map taxonomy (weak 16 → 18 หมวด) �
 **Description:** evaluate บน `data/val.csv` → macro-F1, per-class recall, confusion matrix → รายงาน (**G3: agreement กับ weak label — ไม่ใช่ความจริงสัมบูรณ์, ระบุข้อจำกัดในรายงาน**) แล้ว temperature scaling + จูน threshold 0.6 (G4) → score ต่ำกว่า = "low confidence"
 
 **Acceptance criteria:**
-- [ ] รายงาน macro-F1 + per-class recall + confusion matrix บน val
-- [ ] temperature scale ถูก fit บน val + threshold 0.6
-- [ ] ขึ้น label "low confidence" เมื่อ score < threshold
+- [x] รายงาน macro-F1 + per-class recall + confusion matrix บน val (G3: agreement กับ weak — ระบุข้อจำกัด)
+- [x] temperature scale ถูก fit บน val + threshold 0.6 (→ `calib.json`)
+- [x] ขึ้น label "low confidence" เมื่อ score < threshold
 
-**Verification:** `uv run python -m textcls.evaluate --model models/… --test data/val.csv` ผ่าน · พิมพ์ macro-F1 (baseline ตั้งต้น 0.70 — วัด agreement กับ weak)
+**Verification:** `uv run python -m textcls.evaluate --model models/… --test data/val.csv` ผ่าน · พิมพ์ macro-F1 (smoke 256 แถว = 0.48 · baseline ตั้งต้น 0.70 — วัด agreement กับ weak)
 **Dependencies:** Task 4 · **Files likely touched:** `textcls/evaluate.py`, `textcls/calibrate.py` · **Scope:** Medium
 
-#### Task 6: serve.py + predict.py — Deploy 2 ช่องทาง
-**Description:** API FastAPI `POST /classify` → `{category, confidence}` + CLI batch `predict.py` (CSV → CSV พร้อมคอลัมน์ category, confidence) ใช้โมเดลที่ผ่าน calibrate
+#### Task 6: predict.py — Deploy ช่องทาง CLI (เลื่อน serve.py/API ออกไปก่อน ตาม decision 2026-08-28)
+**Description:** CLI batch `predict.py` (CSV → CSV พร้อมคอลัมน์ category, confidence) ใช้โมเดลที่ผ่าน calibrate. ~~API FastAPI `POST /classify`~~ — เลื่อน (เลือก CLI อย่างเดียว; ถ้าต้องการ API ค่อยกลับมาทำ)
 
 **Acceptance criteria:**
-- [ ] `POST /classify` คืน `{"category": ..., "confidence": ...}` โดย confidence ∈ [0,1]
-- [ ] CLI `python -m textcls.predict --model --input --output` ผลิต CSV พร้อมคอลัมน์ category + confidence
-- [ ] Score ต่ำกว่า threshold ถูก mark เป็น "low confidence"
+- [ ] ~~`POST /classify` คืน `{"category": ..., "confidence": ...}`~~ — เลื่อน (serve.py ไม่สร้าง)
+- [x] CLI `python -m textcls.predict --model --input --output` ผลิต CSV พร้อมคอลัมน์ category + confidence
+- [x] Score ต่ำกว่า threshold ถูก mark เป็น "low confidence"
 
-**Verification:** `uv run pytest tests/test_serve.py` ผ่าน (TestClient) · smoke: curl POST + predict.py กับไฟล์ตัวอย่าง
+**Verification:** `uv run pytest tests/test_predict.py` ผ่าน · smoke: predict.py กับไฟล์ตัวอย่าง
 **Dependencies:** Task 4 (model), 5 (threshold) · **Scope:** Medium
 
 ### Checkpoints
@@ -129,8 +129,10 @@ weak_labels.csv → clean text → map taxonomy (weak 16 → 18 หมวด) �
 ## Open Questions
 
 - [ ] ค่า macro-F1 เป้าหมายที่รับได้ (ตอนนี้วัด agreement กับ weak — ตั้ง baseline ใหม่, 0.70 เดิมตั้งไว้บนมนุษย์ test)?
-- [ ] mapping weak→18 หมวดใน `configs/weak_label_map.json` — confirm หรือแก้?
-- [ ] ถอดโค้ดที่ตายแล้วออก: ลบ `llm_label.py` + test, `weak_label.py` + test, flag `--no-weak`, `--human-test`?
+- [ ] mapping weak→18 หมวดใน `configs/weak_label_map.json` — confirm หรือแก้? (weak 16 ครบทั้งหมด; `religion`/`child_sexual_content` ไม่มี weak source → ไม่มี train data)
+- [x] ~~ถอดโค้ดที่ตายแล้ว~~ — ลบ `llm_label.py`/`weak_label.py` + tests, flag `--no-weak`/`--human-test`, dep `google-genai` แล้ว (เก็บ `tiktoken`/`protobuf` เพราะ tokenizer ต้องใช้)
+- [ ] เทรนเต็มชุด (128k) ยังไม่ได้รัน — smoke (736 แถว) เท่านั้น
+- [ ] `serve.py` (API) เลื่อนตาม decision — ทำ CLI (`predict.py`) อย่างเดียว
 - [ ] ถ้ากลับมาใช้ raw: ขั้นตอน LLM label / ground truth ต้องคุยกันใหม่ (ไว้คราวหน้า)
 
 ## Definition of Done (ตาม spec Boundaries)
