@@ -9,6 +9,7 @@ dependencies = [
     "pyarrow>=25.0.1",
     "scikit-learn>=1.9.0",
     "sentencepiece>=0.2.2",
+    "tiktoken>=0.14.0",  # WangchanBERTa tokenizer (slow → tiktoken) ต้องใช้
     "torch>=2.13.0",
     "transformers>=5.16.1",
 ]
