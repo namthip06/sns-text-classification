@@ -10,6 +10,7 @@ dependencies = [
     "pyarrow>=25.0.1",
     "scikit-learn>=1.9.0",
     "sentencepiece>=0.2.2",
+    "tensorboard>=2.20.0",  # train: TensorBoard reporter (uv run tensorboard --logdir models)
     "tiktoken>=0.14.0",  # transformers ใช้เป็น fallback ตอนสกัด tokenizer
     "torch>=2.13.0",
     "transformers>=5.16.1",

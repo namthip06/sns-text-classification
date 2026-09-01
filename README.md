@@ -46,6 +46,7 @@ Gates:
 - Python ≥ 3.12 + [uv](https://docs.astral.sh/uv/)
 - pandas / pyarrow / scikit-learn
 - PyTorch + Hugging Face `transformers`
+- TensorBoard — monitoring ตอนเทรน (`uv run tensorboard --logdir models/model/runs`)
 - โมเดล: `airesearch/wangchanberta-base-att-spm-uncased` (default, ตั้งเป็น
   PhayaThaiBERT ได้ที่ `--model`)
 
@@ -107,6 +108,10 @@ uv run python -m textcls.train \
 
 Output: `models/model/` (checkpoint + `run_config.json` บันทึก model/seed/hyperparams)
 
+Monitoring ระหว่างเทรน:
+- `models/model/metrics.json` — eval loss + macro-F1 ต่อ epoch (macro-F1 คิดแบบเดียวกับ G3: เฉพาะคลาสที่มีใน val)
+- TensorBoard — `uv run tensorboard --logdir models/model/runs` (loss/learning_rate ทุก `--logging-steps`)
+
 ### T5 — Evaluate (G3) + Calibrate (G4)
 
 ```bash
@@ -137,7 +142,7 @@ Smoke ครบ chain บน GPU: train 736 แถว → calibrate (T≈0.22) �
 uv run pytest
 ```
 
-34 tests — ครอบคลุม config, preprocess, dataset, train (mock tokenizer), evaluate,
+37 tests — ครอบคลุม config, preprocess, dataset, train (mock tokenizer), evaluate,
 calibrate, predict · เน้น unit test ไม่โหลดโมเดลจริง/ไม่เรียก API
 
 ## แผนงานที่เหลือ

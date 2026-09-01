@@ -15,7 +15,8 @@ import pandas as pd
 import torch
 from torch.utils.data import Dataset
 from transformers import (AutoModelForSequenceClassification, AutoTokenizer,
-                          DataCollatorWithPadding, Trainer, TrainingArguments)
+                          DataCollatorWithPadding, Trainer, TrainerCallback,
+                          TrainingArguments)
 
 DEFAULT_MODEL = "airesearch/wangchanberta-base-att-spm-uncased"
 MAX_LENGTH = 256
@@ -56,6 +57,34 @@ def setup_seed(seed: int) -> None:
         torch.cuda.manual_seed_all(seed)
 
 
+def compute_metrics(eval_pred) -> dict:
+    """macro-F1 บนคลาสที่ปรากฏใน true (zero_division=0) — คิดแบบเดียวกับ G3 ใน evaluate.py."""
+    from sklearn.metrics import f1_score
+
+    logits, labels = eval_pred
+    pred = np.asarray(logits).argmax(axis=1)
+    labels = np.asarray(labels)
+    present = sorted(set(labels.tolist()))
+    return {"macro_f1": float(f1_score(labels, pred, labels=present,
+                                       average="macro", zero_division=0))}
+
+
+class MetricsCallback(TrainerCallback):
+    """เก็บ metrics ต่อ epoch ลง metrics.json — ดูย้อนหลังได้หลังจบเทรน (console log หายเอง)."""
+
+    def __init__(self, out_dir: Path):
+        self.path = out_dir / "metrics.json"
+        self.history: list[dict] = []
+
+    def on_evaluate(self, args, state, control, metrics=None, **kwargs) -> None:
+        if metrics is None:
+            return
+        self.history.append({k: v for k, v in metrics.items()
+                             if isinstance(v, (int, float, str))})
+        self.path.write_text(json.dumps(self.history, ensure_ascii=False, indent=2),
+                             encoding="utf-8")
+
+
 def training_kwargs(args) -> dict:
     """kwargs ของ TrainingArguments — แยกให้ test ได้โดยไม่ต้องสร้าง Trainer."""
     return {
@@ -70,7 +99,8 @@ def training_kwargs(args) -> dict:
         "seed": args.seed,
         "fp16": torch.cuda.is_available(),
         "logging_steps": args.logging_steps,
-        "report_to": [],
+        # tensorboard reporter (transformers v5) เขียนลง <output_dir>/runs/ เอง (ไม่มี --logging_dir แล้ว)
+        "report_to": ["tensorboard"],
     }
 
 
@@ -108,20 +138,22 @@ def main(argv: list[str] | None = None) -> None:
     # CE + class weight (แก้ loss_fct ของ AutoModelForSequenceClassification ตรงๆ)
     model.loss_fct = torch.nn.CrossEntropyLoss(weight=class_w_t)
 
+    out_dir = Path(args.out) / args.tag
+    out_dir.mkdir(parents=True, exist_ok=True)
     trainer = Trainer(
         model=model,
         args=TrainingArguments(**training_kwargs(args)),
         train_dataset=train_ds,
         eval_dataset=val_ds,
         data_collator=DataCollatorWithPadding(tokenizer),
+        compute_metrics=compute_metrics,
+        callbacks=[MetricsCallback(out_dir)],
     )
 
     trainer.train()
 
     model.loss_fct = torch.nn.CrossEntropyLoss()  # reset ก่อน save กัน class-weight หลุดเข้าร state_dict
 
-    out_dir = Path(args.out) / args.tag
-    out_dir.mkdir(parents=True, exist_ok=True)
     trainer.save_model(out_dir)
     tokenizer.save_pretrained(out_dir)
     (out_dir / "run_config.json").write_text(json.dumps({
@@ -129,7 +161,8 @@ def main(argv: list[str] | None = None) -> None:
         "epochs": args.epochs, "lr": args.lr, "batch_size": args.batch_size,
         "categories": ids, "label2id": lid,
     }, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"done → {out_dir}/ (val loss ใน log)")
+    print(f"done → {out_dir}/ · metrics: {out_dir / 'metrics.json'} · "
+          f"TensorBoard: uv run tensorboard --logdir {out_dir / 'runs'}")
 
 
 if __name__ == "__main__":

@@ -29,6 +29,7 @@ uv sync                     # ติดตั้ง deps (ใช้ uv เสม
 uv run pytest               # tests — รันก่อน commit ทุกครั้ง
 uv run python -m textcls.dataset --weak data/weak_labels.csv --categories data/categories.json --out data/
 uv run python -m textcls.train --train data/train.csv --val data/val.csv --categories data/categories.json --out models/
+uv run tensorboard --logdir models/model/runs   # ดูกราฟ train (metrics ต่อ epoch อยู่ models/model/metrics.json)
 uv run python -m textcls.evaluate --model models/model/ --test data/val.csv
 uv run python -m textcls.calibrate --model models/model/ --val data/val.csv
 uv run python -m textcls.predict --model models/model/ --input in.csv --output out.csv
@@ -42,13 +43,14 @@ uv run python -m textcls.predict --model models/model/ --input in.csv --output o
 - `data/` `models/` — **gitignored** (ข้อมูลจริง + checkpoints) ห้าม commit
 - `docs/` — `specs/` spec · `plans/implementation-plan.md` แผน · `notes/data-contract.md` โครงสร้างคอลัมน์ทุกไฟล์ · `ideas/` `interviews/` แนวคิดต้นทาง
 
-## สถานะสำคัญ (ณ 2026-08-28)
+## สถานะสำคัญ (ณ 2026-09-01)
 
 - Tasks: 1 ✅ · 2 (preprocess) deferred · 3 (dataset) ✅ · 4 (train) ✅ · 5 (eval+calibrate) ✅ · 6 (predict CLI) ✅ · `serve.py` (API) เลื่อน
+- train monitoring: `metrics.json` ต่อ epoch (eval loss + macro-F1 แบบ G3) ผ่าน `MetricsCallback` + TensorBoard (`report_to=["tensorboard"]` → log ที่ `models/<tag>/runs/`, ดูด้วย `uv run tensorboard --logdir models/<tag>/runs`) — dep `tensorboard` เพิ่มเมื่อ 2026-09-01 (อนุมัติแล้ว); หมายเหตุ: transformers v5 ไม่มี `--logging_dir` แล้ว
 - dead code ถอดแล้ว: `llm_label.py`/`weak_label.py` + tests, `--no-weak`/`--human-test`, dep `google-genai` — **เก็บ `tiktoken`/`protobuf` ไว้** (transformers ต้องใช้สกัด tokenizer WangchanBERTa)
 - Smoke ครบ chain บน GPU: train 736 แถว (`models/model/`) → calibrate (T=0.22) → evaluate (macro-F1 0.48) → predict — **ยังไม่เทรนเต็ม 128k**
 - mapping weak→18: weak 16 ครบทั้งหมด; `religion`/`child_sexual_content` ไม่มี weak source → ไม่มี train data (class weight = 0)
-- 34 tests ผ่าน
+- 37 tests ผ่าน
 
 ## ข้อห้าม / ถามก่อน
 
