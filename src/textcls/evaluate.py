@@ -2,6 +2,9 @@
 
 val เป็น hold-out จาก weak → metric วัดว่าโมเดลตรงกับ label ของ tag rule แค่ไหน
 ไม่ใช่ความจริงสัมบูรณ์ — ต้องระบุข้อจำกัดนี้ในรายงานทุกครั้ง (ตาม spec).
+
+pred ที่ max confidence (หลัง temperature scaling) < threshold → นับเป็นคลาส
+`no_match` ในเมตริก (ไม่ได้คะแนนคลาสจริงใด — F1 ของ no_match = 0 เสมอ).
 """
 
 import argparse
@@ -14,6 +17,9 @@ from sklearn.metrics import confusion_matrix, f1_score, precision_score, recall_
 
 from textcls.config import CONFIDENCE_THRESHOLD
 from textcls.infer import load_model_dir, predict_logits
+
+NO_MATCH = "no_match"
+NO_MATCH_ID = -1  # sentinel — ไม่ชนกับ id คลาสจริง (0..17); true ไม่มีทางเป็น no_match
 
 
 def softmax(x: np.ndarray) -> np.ndarray:
@@ -32,9 +38,14 @@ def load_calib(model_dir: str | Path) -> dict:
 
 
 def compute_report(true: np.ndarray, pred: np.ndarray, id2label: dict[int, str]) -> dict:
-    """เมตริกบนคลาสที่ปรากฏใน true (คลาสที่ไม่มีข้อมูล → ข้าม ไม่ฉุด macro-F1)."""
-    labels = sorted({int(i) for i in true})
-    names = [id2label[i] for i in labels]
+    """เมตริกบนคลาสที่ปรากฏใน true — pred = NO_MATCH_ID (conf < threshold) นับเป็นคลาส
+    `no_match` เพิ่มเข้าเมตริกด้วย (F1=0 เสมอ เพราะ true ไม่มี no_match)
+    และเป็น FN ของคลาสจริงตาม confusion matrix; คลาสอื่นที่ไม่มีใน true → ข้าม ไม่ฉุด macro-F1."""
+    labels = {int(i) for i in true}
+    if NO_MATCH_ID in {int(i) for i in pred}:
+        labels.add(NO_MATCH_ID)
+    labels = sorted(labels)
+    names = [NO_MATCH if i == NO_MATCH_ID else id2label[i] for i in labels]
     r = recall_score(true, pred, labels=labels, average=None, zero_division=0)
     p = precision_score(true, pred, labels=labels, average=None, zero_division=0)
     f1 = f1_score(true, pred, labels=labels, average=None, zero_division=0)
@@ -63,12 +74,14 @@ def main(argv: list[str] | None = None) -> None:
     df = df[df["label"].isin(label2id)]
     logits = predict_logits(model, tokenizer, df["content"].astype(str).tolist())
     probs = softmax(logits / calib["temperature"])
+    conf = probs.max(axis=1)
     pred = probs.argmax(axis=1)
+    pred[conf < calib["threshold"]] = NO_MATCH_ID  # conf ต่ำกว่า threshold → no_match
     true = df["label"].map(label2id).to_numpy()
 
     report = compute_report(true, pred, id2label)
     report["n_test"] = int(len(df))
-    report["low_confidence"] = int((probs.max(axis=1) < calib["threshold"]).sum())
+    report["no_match"] = int((pred == NO_MATCH_ID).sum())
     report["temperature"] = calib["temperature"]
     report["threshold"] = calib["threshold"]
 
@@ -77,7 +90,7 @@ def main(argv: list[str] | None = None) -> None:
 
     print("evaluate บน val — G3: agreement กับ weak rule (ไม่ใช่ความจริงสัมบูรณ์)")
     print(f"accuracy={report['accuracy']:.4f}  macro_f1={report['macro_f1']:.4f}  "
-          f"n={report['n_test']:,}  low_conf (<{calib['threshold']})={report['low_confidence']:,}")
+          f"n={report['n_test']:,}  no_match (<{calib['threshold']})={report['no_match']:,}")
     print("per-class:")
     for name, m in report["per_class"].items():
         print(f"  {name:20s} recall={m['recall']:.3f}  precision={m['precision']:.3f}  "

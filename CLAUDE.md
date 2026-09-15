@@ -11,7 +11,7 @@ Classifier ข้อความทวิตไทยเป็น **18 หมว
 
 Core checks (2 ตัว):
 - **G3** ประเมิน macro-F1 บน `val` ที่ hold-out จาก weak (agreement กับ weak rule — ไม่ใช่ความจริงสัมบูรณ์) · ใน `evaluate.py`
-- **G4** temperature scaling + threshold 0.6 → ต่ำกว่า = `low confidence` · ใน `config.py` (`CONFIDENCE_THRESHOLD`)
+- **G4** temperature scaling + threshold 0.6 → ต่ำกว่า = `no_match` (นับเป็นคลาสใน G3 ด้วย, 2026-09-10) · ใน `config.py` (`CONFIDENCE_THRESHOLD`) — หมายเหตุ: `predict` CSV ยังใช้คอลัมน์ `low_confidence`
 
 ## Pipeline
 
@@ -32,7 +32,8 @@ uv run python -m textcls.train --train data/train.csv --val data/val.csv --categ
 uv run tensorboard --logdir models/model/runs   # ดูกราฟ train (metrics ต่อ epoch อยู่ models/model/metrics.json)
 uv run python -m textcls.evaluate --model models/model/ --test data/val.csv
 uv run python -m textcls.calibrate --model models/model/ --val data/val.csv
-uv run python -m textcls.predict --model models/model/ --input in.csv --output out.csv
+uv run python -m textcls.predict --model models/model/ --input in.csv --output out.csv            # บังคับ --text-column เพื่อโหมดเงียบ
+uv run python -m textcls.predict --input in.xlsx                            # ไม่ระบุ --text-column = interactive (เลือก model จาก models/ + sheet/คอลัมน์, preview, .xlsx ได้)
 ```
 
 ## โครงสร้าง
@@ -50,7 +51,8 @@ uv run python -m textcls.predict --model models/model/ --input in.csv --output o
 - dead code ถอดแล้ว: `llm_label.py`/`weak_label.py` + tests, `--no-weak`/`--human-test`, dep `google-genai` — **เก็บ `tiktoken`/`protobuf` ไว้** (transformers ต้องใช้สกัด tokenizer WangchanBERTa)
 - Smoke ครบ chain บน GPU: train 736 แถว (`models/model/`) → calibrate (T=0.22) → evaluate (macro-F1 0.48) → predict — **ยังไม่เทรนเต็ม 128k**
 - mapping weak→18: weak 16 ครบทั้งหมด; `religion`/`child_sexual_content` ไม่มี weak source → ไม่มี train data (class weight = 0)
-- 37 tests ผ่าน
+- predict (2026-09-15): merge interactive CLI เข้าไฟล์เดียว — รับ `.xlsx` (dep `openpyxl`, อนุมัติแล้ว), ไม่ระบุ `--text-column` = interactive (เลือก sheet/คอลัมน์ + preview + tqdm progress + bar chart; dep `tqdm`, อนุมัติแล้ว), ไม่ระบุ `--output` → `<input>_predicted.<ext>`, แถวข้อความว่างเว้นว่าง; score ผ่าน calib เสมอ — คอลัมน์ผลลัพธ์ `category`/`confidence`/`low_confidence` (ไม่ใช่ `label`/`score` ตามสคริปต์ต้นทาง)
+- 41 tests ผ่าน
 
 ## ข้อห้าม / ถามก่อน
 

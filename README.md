@@ -31,15 +31,22 @@ label + confidence อยู่แล้ว และไม่มี referee/ม
 
 ## ภาพรวม pipeline
 
-```
-weak_labels ──T3──▶ merged/train/val.csv ──T4──▶ models/ ──T5──▶ evaluate (G3) + calibrate (G4) ──T6──▶ predict
-raw_posts ──T2 preprocess: เก็บไว้ก่อน (ไว้คราวหน้า เมื่อต้องการ ground truth) ────────────────────────────────┘
+```mermaid
+flowchart LR
+    WL["data/weak_labels.csv"] -->|"T3 dataset"| SPLIT["merged/train.csv + val.csv"]
+    SPLIT -->|"T4 train"| M["models/"]
+    M -->|"T5"| G3["evaluate — G3 macro-F1"]
+    M -->|"T5"| G4["calibrate — G4 temp + threshold"]
+    G3 --> P["predict"]
+    G4 -. "calib.json" .-> P
+    RAW["data/raw_posts.csv (258k)"] -.->|"T2 preprocess — เก็บไว้ก่อน<br>ไว้คราวหน้า เมื่อต้องการ ground truth"| WL
 ```
 
 Gates:
 - **G3** — ประเมิน macro-F1 บน `val` ที่ hold-out จาก weak (agreement กับ weak rule —
   ไม่ใช่ความจริงสัมบูรณ์)
-- **G4** — temperature scaling + threshold 0.6 → score ต่ำกว่า = label `low confidence`
+- **G4** — temperature scaling + threshold 0.6 → score ต่ำกว่า = `no_match`
+  (ใน evaluate นับเป็นคลาสในเมตริก; predict CSV ยังใช้คอลัมน์ `low_confidence`)
 
 ## เทคโนโลยี
 
@@ -125,10 +132,25 @@ uv run python -m textcls.calibrate --model models/model/ --val data/val.csv
 ### T6 — Predict (CLI)
 
 ```bash
-uv run python -m textcls.predict --model models/model/ --input in.csv --output out.csv
+# แบบ pipeline (non-interactive): ระบุคอลัมน์ข้อความเอง
+uv run python -m textcls.predict --model models/model/ --input in.csv --output out.csv --text-column content
+
+# แบบ interactive: เลือก model (จาก models/) + sheet/คอลัมน์ใน terminal,
+# preview 5 แถว + ยืนยัน, progress bar + bar chart กระจาย label
+# (ใช้ได้กับ .xlsx ด้วย — ต้องมี openpyxl)
+uv run python -m textcls.predict --input in.xlsx
 ```
 
-Output: CSV เดิม + คอลัมน์ `label` (18 หมวด หรือ `low confidence`) + `confidence`
+- รับ `.csv` และ `.xlsx` · ไม่ระบุ `--output` → เขียน `<ชื่อเดิม>_predicted.<นามสกุล>` (ต้นฉบับไม่ถูกแก้)
+- ไม่ระบุ `--model` (interactive) → เลือกจาก checkpoint ใน `models/` ที่มี `run_config.json`
+  (มีตัวเดียวใช้เลย); โหมด non-interactive ต้องระบุ `--model` เอง
+- ไฟล์ไม่มีแถว header → ใส่ `--no-header` (ทุกบรรทัดเป็นข้อมูล คอลัมน์ชื่อ `col_1..col_N`
+  — non-interactive ระบุ `--text-column col_1`, output ก็ไม่มี header เหมือน input)
+- แถวที่คอลัมน์ข้อความว่าง → `category`/`confidence` เว้นว่าง, `low_confidence` = False
+- score ผ่าน temperature scaling จาก `calib.json` เสมอ (ไม่มีไฟล์ → T=1.0) และ
+  `< threshold` → `low_confidence` = True (G4)
+
+Output: ไฟล์เดิม + คอลัมน์ `category` + `confidence` + `low_confidence`
 (`serve.py` API ยังเลื่อน — ถ้าต้องการค่อยสร้าง)
 
 ## Smoke test — พิสูจน์ pipeline

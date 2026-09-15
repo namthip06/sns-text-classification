@@ -1,7 +1,7 @@
 """Task 5 — calibrate: temperature scaling (G4) fit บน val → save calib.json.
 
 `calib.json` = {"temperature": T, "threshold": CONFIDENCE_THRESHOLD} เก็บในโฟลเดอร์
-model — evaluate / predict ใช้ปรับ confidence; score ต่ำกว่า threshold → "low confidence".
+model — evaluate / predict ใช้ปรับ confidence; score ต่ำกว่า threshold → "no_match".
 """
 
 import argparse
@@ -13,6 +13,7 @@ import pandas as pd
 import torch
 
 from textcls.config import CONFIDENCE_THRESHOLD
+from textcls.evaluate import softmax
 from textcls.infer import load_model_dir, predict_logits
 
 
@@ -53,11 +54,13 @@ def main(argv: list[str] | None = None) -> None:
     labels = df["label"].map(label2id).to_numpy()
 
     t = fit_temperature(logits, labels)
+    no_match = int((softmax(logits / t).max(axis=1) < CONFIDENCE_THRESHOLD).sum())
     out = Path(args.model) / "calib.json"
     out.write_text(json.dumps({"temperature": t, "threshold": CONFIDENCE_THRESHOLD},
                               ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"temperature={t:.4f}  (nll T=1: {nll(logits, labels, 1.0):.4f} → T={t:.4f}: "
-          f"{nll(logits, labels, t):.4f})  threshold={CONFIDENCE_THRESHOLD} → {out}")
+          f"{nll(logits, labels, t):.4f})  threshold={CONFIDENCE_THRESHOLD} → "
+          f"no_match={no_match:,}/{len(df):,}  → {out}")
 
 
 if __name__ == "__main__":

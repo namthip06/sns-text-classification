@@ -36,6 +36,16 @@ def test_compute_report_skips_classes_absent_from_true():
     assert set(r["per_class"]) == {"a", "b"}  # c ถูกข้าม
 
 
+def test_compute_report_counts_no_match():
+    true = np.array([0, 0, 1])
+    pred = np.array([0, evaluate.NO_MATCH_ID, 1])  # conf ต่ำ → no_match
+    id2label = {0: "a", 1: "b"}
+    r = evaluate.compute_report(true, pred, id2label)
+    assert r["per_class"]["no_match"]["support"] == 0  # true ไม่มี no_match
+    assert r["per_class"]["no_match"]["f1"] == 0.0
+    assert r["per_class"]["a"]["recall"] == pytest.approx(0.5)  # 1 FN จาก no_match
+
+
 def test_load_calib_defaults_when_missing(tmp_path):
     d = tmp_path / "model"
     d.mkdir()
