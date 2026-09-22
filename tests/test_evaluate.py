@@ -36,14 +36,13 @@ def test_compute_report_skips_classes_absent_from_true():
     assert set(r["per_class"]) == {"a", "b"}  # c ถูกข้าม
 
 
-def test_compute_report_counts_no_match():
+def test_compute_report_counts_pred_outside_true_as_fn():
     true = np.array([0, 0, 1])
-    pred = np.array([0, evaluate.NO_MATCH_ID, 1])  # conf ต่ำ → no_match
-    id2label = {0: "a", 1: "b"}
+    pred = np.array([0, 2, 1])  # class 2 มีแค่ใน pred → FN ของคลาส 0
+    id2label = {0: "a", 1: "b", 2: "c"}
     r = evaluate.compute_report(true, pred, id2label)
-    assert r["per_class"]["no_match"]["support"] == 0  # true ไม่มี no_match
-    assert r["per_class"]["no_match"]["f1"] == 0.0
-    assert r["per_class"]["a"]["recall"] == pytest.approx(0.5)  # 1 FN จาก no_match
+    assert r["per_class"]["a"]["recall"] == pytest.approx(0.5)
+    assert r["per_class"]["b"]["f1"] == 1.0
 
 
 def test_load_calib_defaults_when_missing(tmp_path):
@@ -51,4 +50,3 @@ def test_load_calib_defaults_when_missing(tmp_path):
     d.mkdir()
     calib = evaluate.load_calib(d)
     assert calib["temperature"] == 1.0
-    assert calib["threshold"] == 0.6

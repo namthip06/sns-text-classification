@@ -1,7 +1,7 @@
 """Task 6 — predict: classify batch (CLI) ด้วยโมเดลที่ calibrate แล้ว.
 
 อ่าน CSV/Excel → คำนวณ category + confidence ต่อแถวด้วย temperature scaling
-(ถ้ามี calib.json) → score ต่ำกว่า threshold = low_confidence.
+(ถ้ามี calib.json) → category = argmax ของ 19 คลาส (no_match รวมอยู่ใน taxonomy).
 
 ทำงาน 2 โหมด:
 - ระบุ --text-column → ทำงานเงียบ (pipeline / test) เหมือนเดิม
@@ -89,12 +89,11 @@ def classify_probs(probs: np.ndarray, id2label: dict[int, str]) -> list[dict]:
     return rows
 
 
-def build_output(df: pd.DataFrame, rows: list[dict], threshold: float) -> pd.DataFrame:
-    """ต่อคอลัมน์ category/confidence/low_confidence เข้ากับ input frame."""
+def build_output(df: pd.DataFrame, rows: list[dict]) -> pd.DataFrame:
+    """ต่อคอลัมน์ category/confidence เข้ากับ input frame."""
     out = df.copy()
     out["category"] = [r["category"] for r in rows]
     out["confidence"] = [r["confidence"] for r in rows]
-    out["low_confidence"] = out["confidence"] < threshold  # NaN (แถวว่าง) → False
     return out
 
 
@@ -168,7 +167,7 @@ def main(argv: list[str] | None = None) -> None:
                                 batch_size=args.batch_size, progress=interactive)
         probs[mask] = softmax(logits / calib["temperature"])
 
-    out = build_output(df, classify_probs(probs, id2label), calib["threshold"])
+    out = build_output(df, classify_probs(probs, id2label))
 
     if interactive:
         counts = out.loc[mask, "category"].value_counts()
@@ -176,7 +175,6 @@ def main(argv: list[str] | None = None) -> None:
 
     dest = write_output(out, src, args.output, no_header=args.no_header)
     print(f"predict {int(mask.sum()):,}/{len(out):,} แถว → {dest}")
-    print(f"low confidence (<{calib['threshold']}): {int(out['low_confidence'].sum()):,}")
 
 
 if __name__ == "__main__":

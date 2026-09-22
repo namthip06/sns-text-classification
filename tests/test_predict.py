@@ -31,24 +31,14 @@ def test_classify_probs_blank_rows_stay_empty():
     assert rows[2] == {"category": "kratom", "confidence": 0.8}
 
 
-def test_build_output_marks_low_confidence():
-    df = pd.DataFrame({"content": ["a", "b", "c"]})
-    rows = [{"category": "gambling", "confidence": 0.9},
-            {"category": "fraud", "confidence": 0.5},
-            {"category": "kratom", "confidence": 0.6}]
-    out = predict.build_output(df, rows, threshold=0.6)
-    assert out["category"].tolist() == ["gambling", "fraud", "kratom"]
-    assert out["confidence"].tolist() == [0.9, 0.5, 0.6]
-    assert out["low_confidence"].tolist() == [False, True, False]  # < threshold เท่านั้น
-
-
-def test_build_output_blank_row_not_low_confidence():
-    df = pd.DataFrame({"content": ["a", ""]})
+def test_build_output_appends_category_and_confidence():
+    df = pd.DataFrame({"content": ["a", "b"]})
     rows = [{"category": "gambling", "confidence": 0.9},
             {"category": "", "confidence": float("nan")}]
-    out = predict.build_output(df, rows, threshold=0.6)
+    out = predict.build_output(df, rows)
     assert out["category"].tolist() == ["gambling", ""]
-    assert out["low_confidence"].tolist() == [False, False]  # nan < threshold → False
+    assert out["confidence"].tolist()[0] == 0.9
+    assert np.isnan(out["confidence"].tolist()[1])
 
 
 def test_bar_chart_shares_and_sorting():
